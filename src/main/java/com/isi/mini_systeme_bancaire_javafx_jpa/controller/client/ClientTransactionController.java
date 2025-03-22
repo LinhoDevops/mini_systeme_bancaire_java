@@ -1,11 +1,18 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.controller.client;
 
+import com.isi.mini_systeme_bancaire_javafx_jpa.model.Client;
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.Compte;
+import com.isi.mini_systeme_bancaire_javafx_jpa.model.Transaction;
+import com.isi.mini_systeme_bancaire_javafx_jpa.repository.ClientRepository;
 import com.isi.mini_systeme_bancaire_javafx_jpa.repository.CompteRepository;
+import com.isi.mini_systeme_bancaire_javafx_jpa.repository.TransactionRepository;
 import com.isi.mini_systeme_bancaire_javafx_jpa.service.impl.CompteServiceImpl;
 import com.isi.mini_systeme_bancaire_javafx_jpa.service.interfaces.CompteService;
+import com.isi.mini_systeme_bancaire_javafx_jpa.utils.JpaUtil;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Notification;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Outils;
+import com.isi.mini_systeme_bancaire_javafx_jpa.utils.SessionManager;
+import jakarta.persistence.EntityManager;
 import javafx.collections.FXCollections;
 import javafx.event.ActionEvent;
 import javafx.fxml.FXML;
@@ -16,9 +23,10 @@ import javafx.scene.layout.VBox;
 import java.io.IOException;
 import java.net.URL;
 import java.text.NumberFormat;
-import java.util.ArrayList;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Locale;
+import java.util.Optional;
 import java.util.ResourceBundle;
 
 public class ClientTransactionController implements Initializable {
@@ -61,13 +69,27 @@ public class ClientTransactionController implements Initializable {
 
     private CompteService compteService;
     private CompteRepository compteRepository;
-    private Long clientId = 1L; // ID client en dur pour la démonstration
+    private ClientRepository clientRepository;
+    private TransactionRepository transactionRepository;
+    private Long clientId;
 
     @Override
     public void initialize(URL url, ResourceBundle rb) {
         // Initialiser les services et repositories
         compteService = new CompteServiceImpl();
         compteRepository = new CompteRepository();
+        clientRepository = new ClientRepository();
+        transactionRepository = new TransactionRepository();
+
+        // Vérifier si un client est connecté
+        if (SessionManager.isClientLoggedIn()) {
+            clientId = SessionManager.getCurrentClient().getId();
+            // Charger les informations du client
+            loadClientInfo();
+        } else {
+            Notification.notifError("Erreur", "Aucun client connecté");
+            return;
+        }
 
         // Groupe de boutons radio pour le type de transaction
         ToggleGroup toggleGroup = new ToggleGroup();
@@ -88,11 +110,8 @@ public class ClientTransactionController implements Initializable {
             }
         });
 
-        // Mettre à jour le nom du client (simulé)
-        lblNomClient.setText("Jean Dupont");
-
-        // Charger des comptes simulés
-        loadMockComptes();
+        // Charger les comptes du client
+        loadComptes();
 
         // Écouteurs pour mettre à jour les soldes
         cbCompteSource.valueProperty().addListener((obs, oldVal, newVal) -> {
@@ -108,57 +127,89 @@ public class ClientTransactionController implements Initializable {
         });
     }
 
-    private void loadMockComptes() {
-        // Créer des comptes factices pour la démonstration
-        List<Compte> comptes = new ArrayList<>();
-
-        Compte compte1 = new Compte();
-        compte1.setId(1L);
-        compte1.setNumero("BQ0001");
-        compte1.setType("COURANT");
-        compte1.setSolde(100000.0);
-
-        Compte compte2 = new Compte();
-        compte2.setId(2L);
-        compte2.setNumero("BQ0002");
-        compte2.setType("EPARGNE");
-        compte2.setSolde(200000.0);
-
-        comptes.add(compte1);
-        comptes.add(compte2);
-
-        // Configuration des ComboBox
-        cbCompteSource.setItems(FXCollections.observableArrayList(comptes));
-        cbCompteSource.setCellFactory(param -> new ListCell<Compte>() {
-            @Override
-            protected void updateItem(Compte item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                } else {
-                    setText(item.getNumero() + " - " + item.getType() + " - " +
-                            NumberFormat.getCurrencyInstance(Locale.FRANCE).format(item.getSolde()));
-                }
+    private void loadClientInfo() {
+        try {
+            Optional<Client> clientOpt = clientRepository.findById(clientId);
+            if (clientOpt.isPresent()) {
+                Client client = clientOpt.get();
+                lblNomClient.setText(client.getNom() + " " + client.getPrenom());
             }
-        });
+        } catch (Exception e) {
+            Notification.notifError("Erreur", "Erreur lors du chargement des informations client : " + e.getMessage());
+        }
+    }
 
-        cbCompteDestination.setItems(FXCollections.observableArrayList(comptes));
-        cbCompteDestination.setCellFactory(param -> new ListCell<Compte>() {
-            @Override
-            protected void updateItem(Compte item, boolean empty) {
-                super.updateItem(item, empty);
-                if (empty || item == null) {
-                    setText(null);
-                } else {
-                    setText(item.getNumero() + " - " + item.getType() + " - " +
-                            NumberFormat.getCurrencyInstance(Locale.FRANCE).format(item.getSolde()));
-                }
+    private void loadComptes() {
+        try {
+            // Récupérer les comptes du client connecté depuis la base de données
+            List<Compte> comptes = compteRepository.findByClientId(clientId);
+
+            if (comptes.isEmpty()) {
+                Notification.notifWarning("Information", "Vous n'avez pas de comptes actifs.");
+                return;
             }
-        });
 
-        // Sélectionner le premier compte par défaut
-        cbCompteSource.getSelectionModel().selectFirst();
-        afficherSoldeCompte(lblSoldeSource, cbCompteSource.getValue());
+            // Configuration des ComboBox
+            cbCompteSource.setItems(FXCollections.observableArrayList(comptes));
+            cbCompteSource.setCellFactory(param -> new ListCell<Compte>() {
+                @Override
+                protected void updateItem(Compte item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(item.getNumero() + " - " + item.getType() + " - " +
+                                NumberFormat.getCurrencyInstance(Locale.FRANCE).format(item.getSolde()));
+                    }
+                }
+            });
+
+            cbCompteSource.setButtonCell(new ListCell<Compte>() {
+                @Override
+                protected void updateItem(Compte item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(item.getNumero() + " - " + item.getType());
+                    }
+                }
+            });
+
+            cbCompteDestination.setItems(FXCollections.observableArrayList(comptes));
+            cbCompteDestination.setCellFactory(param -> new ListCell<Compte>() {
+                @Override
+                protected void updateItem(Compte item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(item.getNumero() + " - " + item.getType() + " - " +
+                                NumberFormat.getCurrencyInstance(Locale.FRANCE).format(item.getSolde()));
+                    }
+                }
+            });
+
+            cbCompteDestination.setButtonCell(new ListCell<Compte>() {
+                @Override
+                protected void updateItem(Compte item, boolean empty) {
+                    super.updateItem(item, empty);
+                    if (empty || item == null) {
+                        setText(null);
+                    } else {
+                        setText(item.getNumero() + " - " + item.getType());
+                    }
+                }
+            });
+
+            // Sélectionner le premier compte par défaut s'il existe
+            if (!comptes.isEmpty()) {
+                cbCompteSource.getSelectionModel().selectFirst();
+                afficherSoldeCompte(lblSoldeSource, cbCompteSource.getValue());
+            }
+        } catch (Exception e) {
+            Notification.notifError("Erreur", "Erreur lors du chargement des comptes : " + e.getMessage());
+        }
     }
 
     private void afficherSoldeCompte(Label label, Compte compte) {
@@ -185,43 +236,92 @@ public class ClientTransactionController implements Initializable {
 
         boolean success = false;
 
-        // Simuler les opérations au lieu d'appeler les services réels
-        if (rbDepot.isSelected()) {
-            // Simuler un dépôt
-            Compte compte = cbCompteSource.getValue();
-            compte.setSolde(compte.getSolde() + montant);
-            success = true;
-        } else if (rbRetrait.isSelected()) {
-            // Simuler un retrait
-            Compte compte = cbCompteSource.getValue();
-            if (compte.getSolde() >= montant) {
-                compte.setSolde(compte.getSolde() - montant);
-                success = true;
-            } else {
-                Notification.notifWarning("Erreur", "Solde insuffisant");
-                return;
-            }
-        } else if (rbVirement.isSelected()) {
-            // Simuler un virement
-            Compte compteSource = cbCompteSource.getValue();
-            Compte compteDestination = cbCompteDestination.getValue();
+        // Créons un EntityManager pour gérer la transaction de persistance
+        EntityManager em = JpaUtil.getEntityManager();
 
-            if (compteSource.getSolde() >= montant) {
-                compteSource.setSolde(compteSource.getSolde() - montant);
-                compteDestination.setSolde(compteDestination.getSolde() + montant);
+        try {
+            em.getTransaction().begin();
+
+            Transaction transaction = new Transaction();
+            transaction.setMontant(montant);
+            transaction.setDate(LocalDateTime.now());
+            transaction.setStatut("COMPLETEE");
+
+            // Description si fournie
+            String description = txtDescription.getText();
+
+            if (rbDepot.isSelected()) {
+                // Dépôt
+                Compte compte = em.find(Compte.class, cbCompteSource.getValue().getId());
+                compte.setSolde(compte.getSolde() + montant);
+
+                transaction.setType("DEPOT");
+                transaction.setCompte(compte);
+
+                em.persist(transaction);
+                em.merge(compte);
                 success = true;
-            } else {
-                Notification.notifWarning("Erreur", "Solde insuffisant");
-                return;
+
+            } else if (rbRetrait.isSelected()) {
+                // Retrait
+                Compte compte = em.find(Compte.class, cbCompteSource.getValue().getId());
+
+                if (compte.getSolde() >= montant) {
+                    compte.setSolde(compte.getSolde() - montant);
+
+                    transaction.setType("RETRAIT");
+                    transaction.setCompte(compte);
+
+                    em.persist(transaction);
+                    em.merge(compte);
+                    success = true;
+                } else {
+                    em.getTransaction().rollback();
+                    Notification.notifWarning("Erreur", "Solde insuffisant");
+                    return;
+                }
+
+            } else if (rbVirement.isSelected()) {
+                // Virement
+                Compte compteSource = em.find(Compte.class, cbCompteSource.getValue().getId());
+                Compte compteDestination = em.find(Compte.class, cbCompteDestination.getValue().getId());
+
+                if (compteSource.getSolde() >= montant) {
+                    compteSource.setSolde(compteSource.getSolde() - montant);
+                    compteDestination.setSolde(compteDestination.getSolde() + montant);
+
+                    transaction.setType("VIREMENT");
+                    transaction.setCompteSource(compteSource);
+                    transaction.setCompteDestination(compteDestination);
+
+                    em.persist(transaction);
+                    em.merge(compteSource);
+                    em.merge(compteDestination);
+                    success = true;
+                } else {
+                    em.getTransaction().rollback();
+                    Notification.notifWarning("Erreur", "Solde insuffisant");
+                    return;
+                }
             }
+
+            // Valider la transaction de persistance
+            em.getTransaction().commit();
+
+        } catch (Exception e) {
+            if (em.getTransaction().isActive()) {
+                em.getTransaction().rollback();
+            }
+            Notification.notifError("Erreur", "Erreur lors de la transaction : " + e.getMessage());
+            e.printStackTrace();
+            return;
+        } finally {
+            em.close();
         }
 
         if (success) {
-            // Mettre à jour les affichages
-            afficherSoldeCompte(lblSoldeSource, cbCompteSource.getValue());
-            if (cbCompteDestination.getValue() != null) {
-                afficherSoldeCompte(lblSoldeDestination, cbCompteDestination.getValue());
-            }
+            // Recharger les comptes pour afficher les soldes mis à jour
+            loadComptes();
 
             // Notification de succès
             Notification.notifSuccess("Succès", "Transaction effectuée avec succès");
@@ -277,7 +377,7 @@ public class ClientTransactionController implements Initializable {
     @FXML
     private void handleDashboard(ActionEvent event) {
         try {
-            Outils.load(event, "Tableau de Bord", "/fxml/client/ClientDashboardView.fxml");
+            Outils.load(event, "Tableau de Bord", "/fxml/client/dashboard.fxml");
         } catch (IOException ex) {
             Notification.notifError("Erreur", "Impossible de charger le tableau de bord: " + ex.getMessage());
         }
@@ -286,7 +386,7 @@ public class ClientTransactionController implements Initializable {
     @FXML
     private void handleCarte(ActionEvent event) {
         try {
-            Outils.load(event, "Gestion de Carte Bancaire", "/fxml/client/ClientCarteView.fxml");
+            Outils.load(event, "Gestion de Carte Bancaire", "/fxml/client/carte.fxml");
         } catch (IOException ex) {
             Notification.notifError("Erreur", "Impossible de charger la page: " + ex.getMessage());
         }
@@ -295,7 +395,7 @@ public class ClientTransactionController implements Initializable {
     @FXML
     private void handleCredit(ActionEvent event) {
         try {
-            Outils.load(event, "Crédits et Simulations", "/fxml/client/ClientCreditView.fxml");
+            Outils.load(event, "Crédits et Simulations", "/fxml/client/credit.fxml");
         } catch (IOException ex) {
             Notification.notifError("Erreur", "Impossible de charger la page: " + ex.getMessage());
         }
@@ -304,7 +404,7 @@ public class ClientTransactionController implements Initializable {
     @FXML
     private void handleTicket(ActionEvent event) {
         try {
-            Outils.load(event, "Support Client", "/fxml/client/ClientTicketView.fxml");
+            Outils.load(event, "Support Client", "/fxml/client/ticket.fxml");
         } catch (IOException ex) {
             Notification.notifError("Erreur", "Impossible de charger la page: " + ex.getMessage());
         }
@@ -313,6 +413,10 @@ public class ClientTransactionController implements Initializable {
     @FXML
     private void handleLogout(ActionEvent event) {
         try {
+            // Effacer les informations de session
+            SessionManager.logout();
+
+            // Rediriger vers la page de connexion
             Outils.load(event, "Mini Système Bancaire - Connexion", "/fxml/Login.fxml");
         } catch (IOException ex) {
             Notification.notifError("Erreur", "Impossible de se déconnecter: " + ex.getMessage());

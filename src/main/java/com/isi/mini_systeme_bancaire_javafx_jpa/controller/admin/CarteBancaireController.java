@@ -1,6 +1,7 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.controller.admin;
 
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.CarteBancaire;
+import com.isi.mini_systeme_bancaire_javafx_jpa.model.Client;
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.Compte;
 import com.isi.mini_systeme_bancaire_javafx_jpa.repository.CarteBancaireRepository;
 import com.isi.mini_systeme_bancaire_javafx_jpa.repository.CompteRepository;
@@ -14,12 +15,14 @@ import javafx.fxml.FXML;
 import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
+import org.hibernate.Hibernate;
 
 import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.ResourceBundle;
+import java.util.stream.Collectors;
 
 public class CarteBancaireController implements Initializable {
 
@@ -39,7 +42,7 @@ public class CarteBancaireController implements Initializable {
     private PasswordField txtCodePin;
 
     @FXML
-    private ComboBox<Compte> cbCompte;
+    private ComboBox<CompteWrapper> cbCompte;
 
     @FXML
     private Button btnSave;
@@ -80,8 +83,37 @@ public class CarteBancaireController implements Initializable {
     private CarteBancaireRepository carteRepository = new CarteBancaireRepository();
     private CompteRepository compteRepository = new CompteRepository();
     private ObservableList<CarteBancaire> cartesList = FXCollections.observableArrayList();
-    private ObservableList<Compte> comptesList = FXCollections.observableArrayList();
+    private ObservableList<CompteWrapper> comptesList = FXCollections.observableArrayList();
     private CarteBancaire selectedCarte;
+
+    // Classe wrapper pour contourner les problèmes de lazy loading
+    public static class CompteWrapper {
+        private Compte compte;
+        private String displayText;
+
+        public CompteWrapper(Compte compte) {
+            this.compte = compte;
+
+            // Initialiser explicitement les propriétés du client
+            if (compte.getClient() != null) {
+                Hibernate.initialize(compte.getClient());
+                this.displayText = compte.getNumero() + " (" +
+                        compte.getClient().getNom() + " " +
+                        compte.getClient().getPrenom() + ")";
+            } else {
+                this.displayText = compte.getNumero() + " (N/A)";
+            }
+        }
+
+        public Compte getCompte() {
+            return compte;
+        }
+
+        @Override
+        public String toString() {
+            return displayText;
+        }
+    }
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -94,43 +126,8 @@ public class CarteBancaireController implements Initializable {
         // Initialiser les statuts disponibles
         cbStatut.setItems(FXCollections.observableArrayList("ACTIVE", "BLOQUEE", "EXPIREE"));
 
-        // Configurer le combobox des comptes
-        cbCompte.setConverter(new javafx.util.StringConverter<Compte>() {
-            @Override
-            public String toString(Compte compte) {
-                return compte == null ? "" : compte.getNumero() + " (" +
-                        (compte.getClient() != null ? compte.getClient().getNom() + " " + compte.getClient().getPrenom() : "N/A") + ")";
-            }
-
-            @Override
-            public Compte fromString(String s) {
-                return null; // Non utilisé
-            }
-        });
-
         // Configurer les colonnes du tableau
-        colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
-        colClient.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null && cellData.getValue().getCompte().getClient() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getClient().getNom() + " " +
-                                cellData.getValue().getCompte().getClient().getPrenom()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-        colCompte.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getNumero()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-        colDateExpiration.setCellValueFactory(new PropertyValueFactory<>("dateExpiration"));
-        colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
+        configurerColonnesTableau();
 
         // Désactiver les boutons de modification et suppression au départ
         btnUpdate.setDisable(true);
@@ -145,14 +142,57 @@ public class CarteBancaireController implements Initializable {
         chargerCartes();
     }
 
+    private void configurerColonnesTableau() {
+        colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
+
+        // Configuration de la colonne Client
+        colClient.setCellValueFactory(cellData -> {
+            CarteBancaire carte = cellData.getValue();
+            if (carte.getCompte() != null && carte.getCompte().getClient() != null) {
+                try {
+                    // Forcer l'initialisation du client
+                    Hibernate.initialize(carte.getCompte().getClient());
+                    return javafx.beans.binding.Bindings.createStringBinding(() ->
+                            carte.getCompte().getClient().getNom() + " " +
+                                    carte.getCompte().getClient().getPrenom()
+                    );
+                } catch (Exception e) {
+                    return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
+                }
+            } else {
+                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
+            }
+        });
+
+        // Configuration de la colonne Compte
+        colCompte.setCellValueFactory(cellData -> {
+            CarteBancaire carte = cellData.getValue();
+            if (carte.getCompte() != null) {
+                return javafx.beans.binding.Bindings.createStringBinding(() ->
+                        carte.getCompte().getNumero()
+                );
+            } else {
+                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
+            }
+        });
+
+        colDateExpiration.setCellValueFactory(new PropertyValueFactory<>("dateExpiration"));
+        colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
+    }
+
     private void chargerComptes() {
         try {
             // Récupérer tous les comptes
             List<Compte> comptes = compteRepository.findAll();
 
+            // Convertir en CompteWrapper
+            List<CompteWrapper> comptesWrapper = comptes.stream()
+                    .map(CompteWrapper::new)
+                    .collect(Collectors.toList());
+
             // Mettre à jour la liste observable
             comptesList.clear();
-            comptesList.addAll(comptes);
+            comptesList.addAll(comptesWrapper);
 
             // Mettre à jour le combobox
             cbCompte.setItems(comptesList);
@@ -189,7 +229,18 @@ public class CarteBancaireController implements Initializable {
             dpDateExpiration.setValue(selectedCarte.getDateExpiration());
             cbStatut.setValue(selectedCarte.getStatut());
             txtCodePin.setText(selectedCarte.getCodePin());
-            cbCompte.setValue(selectedCarte.getCompte());
+
+            // Trouver le compte correspondant dans la liste des comptes
+            if (selectedCarte.getCompte() != null) {
+                CompteWrapper compteCorrespondant = comptesList.stream()
+                        .filter(cw -> cw.getCompte().getId().equals(selectedCarte.getCompte().getId()))
+                        .findFirst()
+                        .orElse(null);
+
+                cbCompte.setValue(compteCorrespondant);
+            } else {
+                cbCompte.setValue(null);
+            }
 
             // Activer les boutons de modification et suppression
             btnUpdate.setDisable(false);
@@ -219,7 +270,7 @@ public class CarteBancaireController implements Initializable {
             carte.setDateExpiration(dpDateExpiration.getValue());
             carte.setStatut(cbStatut.getValue());
             carte.setCodePin(txtCodePin.getText());
-            carte.setCompte(cbCompte.getValue());
+            carte.setCompte(cbCompte.getValue().getCompte());  // Utiliser le getter du wrapper
 
             // Enregistrer la carte
             carte = carteRepository.save(carte);
@@ -260,7 +311,7 @@ public class CarteBancaireController implements Initializable {
             selectedCarte.setDateExpiration(dpDateExpiration.getValue());
             selectedCarte.setStatut(cbStatut.getValue());
             selectedCarte.setCodePin(txtCodePin.getText());
-            selectedCarte.setCompte(cbCompte.getValue());
+            selectedCarte.setCompte(cbCompte.getValue().getCompte());  // Utiliser le getter du wrapper
 
             // Enregistrer la carte
             CarteBancaire carte = carteRepository.save(selectedCarte);
@@ -356,7 +407,6 @@ public class CarteBancaireController implements Initializable {
             Notification.notifError("Erreur", "Erreur lors du blocage de la carte : " + e.getMessage());
         }
     }
-
     @FXML
     private void handleDebloquer(ActionEvent event) {
         try {

@@ -14,7 +14,12 @@ public class TicketSupportRepository {
     public List<TicketSupport> findAll() {
         EntityManager em = JpaUtil.getEntityManager();
         try {
-            TypedQuery<TicketSupport> query = em.createQuery("SELECT t FROM TicketSupport t ORDER BY t.dateOuverture DESC", TicketSupport.class);
+            TypedQuery<TicketSupport> query = em.createQuery(
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "LEFT JOIN FETCH t.admin a " +
+                            "ORDER BY t.dateOuverture DESC",
+                    TicketSupport.class);
             return query.getResultList();
         } finally {
             em.close();
@@ -24,8 +29,15 @@ public class TicketSupportRepository {
     public Optional<TicketSupport> findById(Long id) {
         EntityManager em = JpaUtil.getEntityManager();
         try {
-            TicketSupport ticket = em.find(TicketSupport.class, id);
-            return Optional.ofNullable(ticket);
+            TypedQuery<TicketSupport> query = em.createQuery(
+                    "SELECT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "LEFT JOIN FETCH t.admin a " +
+                            "WHERE t.id = :id",
+                    TicketSupport.class);
+            query.setParameter("id", id);
+            List<TicketSupport> results = query.getResultList();
+            return results.isEmpty() ? Optional.empty() : Optional.of(results.get(0));
         } finally {
             em.close();
         }
@@ -35,7 +47,11 @@ public class TicketSupportRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<TicketSupport> query = em.createQuery(
-                    "SELECT t FROM TicketSupport t WHERE t.client.id = :clientId ORDER BY t.dateOuverture DESC", TicketSupport.class);
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.admin a " +
+                            "WHERE t.client.id = :clientId " +
+                            "ORDER BY t.dateOuverture DESC",
+                    TicketSupport.class);
             query.setParameter("clientId", clientId);
             return query.getResultList();
         } finally {
@@ -47,7 +63,11 @@ public class TicketSupportRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<TicketSupport> query = em.createQuery(
-                    "SELECT t FROM TicketSupport t WHERE t.admin.id = :adminId ORDER BY t.dateOuverture DESC", TicketSupport.class);
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "WHERE t.admin.id = :adminId " +
+                            "ORDER BY t.dateOuverture DESC",
+                    TicketSupport.class);
             query.setParameter("adminId", adminId);
             return query.getResultList();
         } finally {
@@ -59,7 +79,12 @@ public class TicketSupportRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<TicketSupport> query = em.createQuery(
-                    "SELECT t FROM TicketSupport t WHERE t.statut = :statut ORDER BY t.dateOuverture DESC", TicketSupport.class);
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "LEFT JOIN FETCH t.admin a " +
+                            "WHERE t.statut = :statut " +
+                            "ORDER BY t.dateOuverture DESC",
+                    TicketSupport.class);
             query.setParameter("statut", statut);
             return query.getResultList();
         } finally {
@@ -71,7 +96,11 @@ public class TicketSupportRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<TicketSupport> query = em.createQuery(
-                    "SELECT t FROM TicketSupport t WHERE t.admin IS NULL ORDER BY t.dateOuverture ASC", TicketSupport.class);
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "WHERE t.admin IS NULL " +
+                            "ORDER BY t.dateOuverture ASC",
+                    TicketSupport.class);
             return query.getResultList();
         } finally {
             em.close();
@@ -82,12 +111,15 @@ public class TicketSupportRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<TicketSupport> query = em.createQuery(
-                    "SELECT t FROM TicketSupport t WHERE " +
-                            "LOWER(t.sujet) LIKE LOWER(:searchTerm) OR " +
+                    "SELECT DISTINCT t FROM TicketSupport t " +
+                            "LEFT JOIN FETCH t.client c " +
+                            "LEFT JOIN FETCH t.admin a " +
+                            "WHERE LOWER(t.sujet) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(t.description) LIKE LOWER(:searchTerm) OR " +
-                            "LOWER(t.client.nom) LIKE LOWER(:searchTerm) OR " +
-                            "LOWER(t.client.prenom) LIKE LOWER(:searchTerm) OR " +
-                            "LOWER(t.statut) LIKE LOWER(:searchTerm)", TicketSupport.class);
+                            "LOWER(c.nom) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(c.prenom) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(t.statut) LIKE LOWER(:searchTerm)",
+                    TicketSupport.class);
             query.setParameter("searchTerm", "%" + searchTerm + "%");
             return query.getResultList();
         } finally {
@@ -111,8 +143,6 @@ public class TicketSupportRepository {
     public double calculateAverageResolutionTime() {
         EntityManager em = JpaUtil.getEntityManager();
         try {
-            // Cette requête suppose que vous avez un champ dateFermeture dans votre entité TicketSupport
-            // Si ce n'est pas le cas, vous devrez adapter le modèle et la requête
             TypedQuery<Object[]> query = em.createQuery(
                     "SELECT t.dateOuverture, t.dateFermeture FROM TicketSupport t " +
                             "WHERE t.statut = 'Résolu' OR t.statut = 'Fermé'", Object[].class);

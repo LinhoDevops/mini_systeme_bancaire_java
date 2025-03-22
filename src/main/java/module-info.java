@@ -17,6 +17,7 @@ module com.isi.mini_systeme_bancaire_javafx_jpa {
     requires org.apache.poi.ooxml;
     requires org.apache.pdfbox;
     requires transitive java.desktop;
+    requires org.apache.logging.log4j;
 
     opens com.isi.mini_systeme_bancaire_javafx_jpa to javafx.fxml;
     opens com.isi.mini_systeme_bancaire_javafx_jpa.controller.client to javafx.fxml;
@@ -31,8 +32,8 @@ module com.isi.mini_systeme_bancaire_javafx_jpa {
     exports com.isi.mini_systeme_bancaire_javafx_jpa.mapper to javafx.fxml;
 
     // Open model package to both JavaFX and Hibernate
-    opens com.isi.mini_systeme_bancaire_javafx_jpa.model to javafx.fxml, org.hibernate.orm.core;
-    exports com.isi.mini_systeme_bancaire_javafx_jpa.model to javafx.fxml;
+    opens com.isi.mini_systeme_bancaire_javafx_jpa.model to javafx.fxml, org.hibernate.orm.core, javafx.base;
+    exports com.isi.mini_systeme_bancaire_javafx_jpa.model to javafx.fxml, javafx.base;
 
     opens com.isi.mini_systeme_bancaire_javafx_jpa.repository to javafx.fxml;
     exports com.isi.mini_systeme_bancaire_javafx_jpa.repository to javafx.fxml;

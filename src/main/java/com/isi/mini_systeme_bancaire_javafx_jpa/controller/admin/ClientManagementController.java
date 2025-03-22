@@ -23,6 +23,7 @@ import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.stream.Collectors;
 
 public class ClientManagementController implements Initializable {
 
@@ -78,7 +79,7 @@ public class ClientManagementController implements Initializable {
     private TableColumn<Client, String> colStatut;
 
     @FXML
-    private TableColumn<Client, Integer> colComptes;
+    private TableColumn<Client, String> colComptes;
 
     @FXML
     private TextField txtSearch;
@@ -106,8 +107,21 @@ public class ClientManagementController implements Initializable {
         colTelephone.setCellValueFactory(new PropertyValueFactory<>("telephone"));
         colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
         colComptes.setCellValueFactory(cellData -> {
-            int nombreComptes = cellData.getValue().getComptes() != null ? cellData.getValue().getComptes().size() : 0;
-            return javafx.beans.binding.Bindings.createObjectBinding(() -> nombreComptes);
+            try {
+                Client client = cellData.getValue();
+                if (client != null && client.getComptes() != null && !client.getComptes().isEmpty()) {
+                    // Récupérer les types de comptes et les joindre en une seule chaîne
+                    String typesComptes = client.getComptes().stream()
+                            .map(compte -> compte.getType())
+                            .collect(Collectors.joining(", "));
+                    return javafx.beans.binding.Bindings.createStringBinding(() -> typesComptes);
+                } else {
+                    return javafx.beans.binding.Bindings.createStringBinding(() -> "Aucun compte");
+                }
+            } catch (Exception e) {
+                // En cas d'erreur (LazyInitializationException), afficher un message par défaut
+                return javafx.beans.binding.Bindings.createStringBinding(() -> "Non disponible");
+            }
         });
 
         // Désactiver les boutons de modification et suppression au départ
@@ -125,8 +139,8 @@ public class ClientManagementController implements Initializable {
 
     private void chargerClients() {
         try {
-            // Récupérer tous les clients
-            List<Client> clients = clientRepository.findAll();
+            // Récupérer tous les clients avec leurs comptes
+            List<Client> clients = clientRepository.findAllWithComptes();
 
             // Mettre à jour la liste observable
             clientsList.clear();
@@ -146,8 +160,8 @@ public class ClientManagementController implements Initializable {
                 return;
             }
 
-            // Rechercher les clients
-            List<Client> clients = clientRepository.searchClients(searchTerm);
+            // Rechercher les clients avec leurs comptes
+            List<Client> clients = clientRepository.searchClientsWithComptes(searchTerm);
 
             // Mettre à jour la liste observable
             clientsList.clear();

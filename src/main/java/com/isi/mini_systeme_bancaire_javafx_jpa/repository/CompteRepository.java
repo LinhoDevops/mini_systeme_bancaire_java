@@ -4,7 +4,6 @@ import com.isi.mini_systeme_bancaire_javafx_jpa.model.Compte;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.JpaUtil;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.TypedQuery;
-
 import java.util.List;
 import java.util.Optional;
 
@@ -14,6 +13,19 @@ public class CompteRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<Compte> query = em.createQuery("SELECT c FROM Compte c ORDER BY c.dateCreation DESC", Compte.class);
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    public List<Compte> findAllWithClients() {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Compte> query = em.createQuery(
+                    "SELECT DISTINCT c FROM Compte c LEFT JOIN FETCH c.client ORDER BY c.dateCreation DESC",
+                    Compte.class
+            );
             return query.getResultList();
         } finally {
             em.close();
@@ -30,11 +42,28 @@ public class CompteRepository {
         }
     }
 
+    public Optional<Compte> findByIdWithClient(Long id) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Compte> query = em.createQuery(
+                    "SELECT c FROM Compte c LEFT JOIN FETCH c.client WHERE c.id = :id",
+                    Compte.class
+            );
+            query.setParameter("id", id);
+            List<Compte> comptes = query.getResultList();
+            return comptes.isEmpty() ? Optional.empty() : Optional.of(comptes.get(0));
+        } finally {
+            em.close();
+        }
+    }
+
     public Optional<Compte> findByNumero(String numero) {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<Compte> query = em.createQuery(
-                    "SELECT c FROM Compte c WHERE c.numero = :numero", Compte.class);
+                    "SELECT c FROM Compte c WHERE c.numero = :numero",
+                    Compte.class
+            );
             query.setParameter("numero", numero);
             List<Compte> comptes = query.getResultList();
             return comptes.isEmpty() ? Optional.empty() : Optional.of(comptes.get(0));
@@ -47,7 +76,9 @@ public class CompteRepository {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             TypedQuery<Compte> query = em.createQuery(
-                    "SELECT c FROM Compte c WHERE c.client.id = :clientId", Compte.class);
+                    "SELECT c FROM Compte c WHERE c.client.id = :clientId",
+                    Compte.class
+            );
             query.setParameter("clientId", clientId);
             return query.getResultList();
         } finally {
@@ -63,7 +94,27 @@ public class CompteRepository {
                             "c.numero LIKE :searchTerm OR " +
                             "c.type LIKE :searchTerm OR " +
                             "c.client.nom LIKE :searchTerm OR " +
-                            "c.client.prenom LIKE :searchTerm", Compte.class);
+                            "c.client.prenom LIKE :searchTerm",
+                    Compte.class
+            );
+            query.setParameter("searchTerm", "%" + searchTerm + "%");
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    public List<Compte> searchComptesWithClients(String searchTerm) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Compte> query = em.createQuery(
+                    "SELECT DISTINCT c FROM Compte c LEFT JOIN FETCH c.client WHERE " +
+                            "c.numero LIKE :searchTerm OR " +
+                            "c.type LIKE :searchTerm OR " +
+                            "c.client.nom LIKE :searchTerm OR " +
+                            "c.client.prenom LIKE :searchTerm",
+                    Compte.class
+            );
             query.setParameter("searchTerm", "%" + searchTerm + "%");
             return query.getResultList();
         } finally {

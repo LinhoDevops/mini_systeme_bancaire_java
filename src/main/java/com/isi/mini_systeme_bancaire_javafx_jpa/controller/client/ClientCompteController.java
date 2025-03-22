@@ -96,7 +96,7 @@ public class ClientCompteController implements Initializable {
     @FXML
     private void handleDemander(ActionEvent event) {
         try {
-            Outils.openNewWindow("Demande de compte", "/fxml/client/demande_compte.fxml");
+            Outils.openNewWindow("Demande de compte", "/fxml/client/compte.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors de l'ouverture de la fenêtre : " + e.getMessage());
         }
@@ -105,7 +105,7 @@ public class ClientCompteController implements Initializable {
     @FXML
     private void handleDashboard(ActionEvent event) {
         try {
-            Outils.load(event, "Tableau de bord", "/fxml/client/client_dashboard.fxml");
+            Outils.load(event, "Tableau de bord", "/fxml/client/dashboard.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement du tableau de bord : " + e.getMessage());
         }
@@ -114,7 +114,7 @@ public class ClientCompteController implements Initializable {
     @FXML
     private void handleTransaction(ActionEvent event) {
         try {
-            Outils.load(event, "Transactions", "/fxml/client/client_transaction.fxml");
+            Outils.load(event, "Transactions", "/fxml/client/transaction.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement des transactions : " + e.getMessage());
         }
@@ -123,7 +123,7 @@ public class ClientCompteController implements Initializable {
     @FXML
     private void handleCarte(ActionEvent event) {
         try {
-            Outils.load(event, "Gestion des cartes", "/fxml/client/client_carte.fxml");
+            Outils.load(event, "Gestion des cartes", "/fxml/client/carte.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement de la gestion des cartes : " + e.getMessage());
         }
@@ -132,7 +132,7 @@ public class ClientCompteController implements Initializable {
     @FXML
     private void handleCredit(ActionEvent event) {
         try {
-            Outils.load(event, "Crédits", "/fxml/client/client_credit.fxml");
+            Outils.load(event, "Crédits", "/fxml/client/credit.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement des crédits : " + e.getMessage());
         }
@@ -144,7 +144,7 @@ public class ClientCompteController implements Initializable {
         SessionManager.logout();
 
         try {
-            Outils.load(event, "Connexion", "/fxml/login.fxml");
+            Outils.load(event, "Connexion", "/fxml/Login.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement de la page de connexion : " + e.getMessage());
         }

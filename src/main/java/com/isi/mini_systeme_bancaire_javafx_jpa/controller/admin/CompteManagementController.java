@@ -19,12 +19,14 @@ import javafx.fxml.Initializable;
 import javafx.scene.control.*;
 import javafx.scene.control.cell.PropertyValueFactory;
 
+
 import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.regex.Pattern;
 
 public class CompteManagementController implements Initializable {
 
@@ -85,11 +87,11 @@ public class CompteManagementController implements Initializable {
     @FXML
     private TextField txtSearch;
 
-    private CompteService compteService = new CompteServiceImpl();
-    private CompteRepository compteRepository = new CompteRepository();
-    private ClientRepository clientRepository = new ClientRepository();
-    private ObservableList<Compte> comptesList = FXCollections.observableArrayList();
-    private ObservableList<Client> clientsList = FXCollections.observableArrayList();
+    private final CompteService compteService = new CompteServiceImpl();
+    private final CompteRepository compteRepository = new CompteRepository();
+    private final ClientRepository clientRepository = new ClientRepository();
+    private final ObservableList<Compte> comptesList = FXCollections.observableArrayList();
+    private final ObservableList<Client> clientsList = FXCollections.observableArrayList();
     private Compte selectedCompte;
 
     @Override
@@ -107,6 +109,24 @@ public class CompteManagementController implements Initializable {
         cbStatut.setItems(FXCollections.observableArrayList("actif", "inactif", "bloqué"));
 
         // Configurer le combobox des clients
+        configurerComboBoxClients();
+
+        // Configurer les colonnes du tableau
+        configurerColonnesTableau();
+
+        // Désactiver les boutons de modification et suppression au départ
+        btnUpdate.setDisable(true);
+        btnDelete.setDisable(true);
+
+        // Ajouter un listener pour la recherche
+        txtSearch.textProperty().addListener((observable, oldValue, newValue) -> rechercherComptes(newValue));
+
+        // Charger les clients et comptes
+        chargerClients();
+        chargerComptes();
+    }
+
+    private void configurerComboBoxClients() {
         cbClient.setConverter(new javafx.util.StringConverter<Client>() {
             @Override
             public String toString(Client client) {
@@ -118,45 +138,39 @@ public class CompteManagementController implements Initializable {
                 return null; // Non utilisé
             }
         });
+    }
 
-        // Configurer les colonnes du tableau
+    private void configurerColonnesTableau() {
         colNumero.setCellValueFactory(new PropertyValueFactory<>("numero"));
         colType.setCellValueFactory(new PropertyValueFactory<>("type"));
         colSolde.setCellValueFactory(new PropertyValueFactory<>("solde"));
         colDateCreation.setCellValueFactory(new PropertyValueFactory<>("dateCreation"));
         colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
+
+        // Configuration des colonnes de client et de carte avec gestion des erreurs
         colClient.setCellValueFactory(cellData -> {
-            Client client = cellData.getValue().getClient();
-            if (client != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> client.getNom() + " " + client.getPrenom()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
+            try {
+                Client client = cellData.getValue().getClient();
+                if (client != null) {
+                    String nomComplet = client.getNom() + " " + client.getPrenom();
+                    return javafx.beans.binding.Bindings.createStringBinding(() -> nomComplet);
+                } else {
+                    return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
+                }
+            } catch (Exception e) {
+                return javafx.beans.binding.Bindings.createStringBinding(() -> "Erreur");
             }
         });
+
         colCarte.setCellValueFactory(cellData -> {
-            // Vérifie si le compte a une carte associée
-            // Correction: la méthode isEmpty() n'existe pas dans CarteBancaire
-            // On vérifie simplement si l'objet carte n'est pas null
-            boolean hasCarte = cellData.getValue().getCarte() != null;
-            return javafx.beans.binding.Bindings.createObjectBinding(() -> hasCarte);
+            try {
+                // Vérifie si le compte a une carte associée
+                boolean hasCarte = cellData.getValue().getCarte() != null;
+                return javafx.beans.binding.Bindings.createObjectBinding(() -> hasCarte);
+            } catch (Exception e) {
+                return javafx.beans.binding.Bindings.createObjectBinding(() -> false);
+            }
         });
-
-        // Désactiver les boutons de modification et suppression au départ
-        btnUpdate.setDisable(true);
-        btnDelete.setDisable(true);
-
-        // Ajouter un listener pour la recherche
-        txtSearch.textProperty().addListener((observable, oldValue, newValue) -> {
-            rechercherComptes(newValue);
-        });
-
-        // Charger les clients
-        chargerClients();
-
-        // Charger les comptes
-        chargerComptes();
     }
 
     private void chargerClients() {
@@ -177,8 +191,8 @@ public class CompteManagementController implements Initializable {
 
     private void chargerComptes() {
         try {
-            // Récupérer tous les comptes
-            List<Compte> comptes = compteRepository.findAll();
+            // Récupérer tous les comptes avec leurs clients
+            List<Compte> comptes = compteRepository.findAllWithClients();
 
             // Mettre à jour la liste observable
             comptesList.clear();
@@ -198,8 +212,8 @@ public class CompteManagementController implements Initializable {
                 return;
             }
 
-            // Rechercher les comptes
-            List<Compte> comptes = compteRepository.searchComptes(searchTerm);
+            // Rechercher les comptes avec leurs clients
+            List<Compte> comptes = compteRepository.searchComptesWithClients(searchTerm);
 
             // Mettre à jour la liste observable
             comptesList.clear();
@@ -210,6 +224,39 @@ public class CompteManagementController implements Initializable {
         } catch (Exception e) {
             Notification.notifError("Erreur", "Erreur lors de la recherche des comptes : " + e.getMessage());
         }
+    }
+
+    private boolean validateInputs() {
+        // Validation des types de compte
+        if (cbType.getValue() == null) {
+            Notification.notifWarning("Validation", "Veuillez sélectionner un type de compte");
+            return false;
+        }
+
+        // Validation du solde
+        if (txtSolde.getText().isEmpty()) {
+            Notification.notifWarning("Validation", "Veuillez saisir un solde");
+            return false;
+        }
+
+        try {
+            double solde = Double.parseDouble(txtSolde.getText());
+            if (solde < 0) {
+                Notification.notifWarning("Validation", "Le solde ne peut pas être négatif");
+                return false;
+            }
+        } catch (NumberFormatException e) {
+            Notification.notifWarning("Validation", "Le solde doit être un nombre valide");
+            return false;
+        }
+
+        // Validation du client
+        if (cbClient.getValue() == null) {
+            Notification.notifWarning("Validation", "Veuillez sélectionner un client");
+            return false;
+        }
+
+        return true;
     }
 
     @FXML
@@ -235,27 +282,16 @@ public class CompteManagementController implements Initializable {
 
     @FXML
     private void handleSave(ActionEvent event) {
+        if (!validateInputs()) {
+            return;
+        }
+
         try {
-            // Vérifier que tous les champs obligatoires sont remplis
-            if (cbType.getValue() == null || txtSolde.getText().isEmpty() || cbClient.getValue() == null) {
-                Notification.notifWarning("Compte", "Veuillez remplir tous les champs obligatoires");
-                return;
-            }
-
-            // Vérifier que le solde est un nombre
-            double solde;
-            try {
-                solde = Double.parseDouble(txtSolde.getText());
-            } catch (NumberFormatException e) {
-                Notification.notifWarning("Compte", "Le solde doit être un nombre");
-                return;
-            }
-
             // Créer un compte
             CompteRequest compteRequest = new CompteRequest(
                     txtNumero.getText().isEmpty() ? null : txtNumero.getText(), // Si vide, le service génère un numéro
                     cbType.getValue(),
-                    solde,
+                    Double.parseDouble(txtSolde.getText()),
                     dpDateCreation.getValue() != null ? dpDateCreation.getValue() : LocalDate.now(),
                     cbStatut.getValue() != null ? cbStatut.getValue() : "actif",
                     cbClient.getValue().getId()
@@ -280,6 +316,10 @@ public class CompteManagementController implements Initializable {
 
     @FXML
     private void handleUpdate(ActionEvent event) {
+        if (!validateInputs()) {
+            return;
+        }
+
         try {
             // Vérifier qu'un compte est sélectionné
             if (selectedCompte == null) {
@@ -287,26 +327,11 @@ public class CompteManagementController implements Initializable {
                 return;
             }
 
-            // Vérifier que tous les champs obligatoires sont remplis
-            if (cbType.getValue() == null || txtSolde.getText().isEmpty() || cbClient.getValue() == null) {
-                Notification.notifWarning("Compte", "Veuillez remplir tous les champs obligatoires");
-                return;
-            }
-
-            // Vérifier que le solde est un nombre
-            double solde;
-            try {
-                solde = Double.parseDouble(txtSolde.getText());
-            } catch (NumberFormatException e) {
-                Notification.notifWarning("Compte", "Le solde doit être un nombre");
-                return;
-            }
-
             // Créer un compte
             CompteRequest compteRequest = new CompteRequest(
                     txtNumero.getText(),
                     cbType.getValue(),
-                    solde,
+                    Double.parseDouble(txtSolde.getText()),
                     dpDateCreation.getValue() != null ? dpDateCreation.getValue() : LocalDate.now(),
                     cbStatut.getValue() != null ? cbStatut.getValue() : "actif",
                     cbClient.getValue().getId()
@@ -359,49 +384,48 @@ public class CompteManagementController implements Initializable {
             Notification.notifError("Erreur", "Erreur lors de la suppression du compte : " + e.getMessage());
         }
     }
+            @FXML
+            private void handleClear(ActionEvent event) {
+                txtNumero.clear();
+                cbType.setValue(null);
+                txtSolde.clear();
+                dpDateCreation.setValue(null);
+                cbStatut.setValue(null);
+                cbClient.setValue(null);
 
-    @FXML
-    private void handleClear(ActionEvent event) {
-        txtNumero.clear();
-        cbType.setValue(null);
-        txtSolde.clear();
-        dpDateCreation.setValue(null);
-        cbStatut.setValue(null);
-        cbClient.setValue(null);
+                selectedCompte = null;
+                btnUpdate.setDisable(true);
+                btnDelete.setDisable(true);
+                btnSave.setDisable(false);
 
-        selectedCompte = null;
-        btnUpdate.setDisable(true);
-        btnDelete.setDisable(true);
-        btnSave.setDisable(false);
+                // Désélectionner la ligne du tableau
+                tableComptes.getSelectionModel().clearSelection();
+            }
 
-        // Désélectionner la ligne du tableau
-        tableComptes.getSelectionModel().clearSelection();
-    }
+            @FXML
+            private void handleRetour(ActionEvent event) {
+                try {
+                    Outils.load(event, "Tableau de bord", "/fxml/admin/dashboard.fxml");
+                } catch (IOException e) {
+                    Notification.notifError("Erreur", "Erreur lors du chargement du tableau de bord : " + e.getMessage());
+                }
+            }
 
-    @FXML
-    private void handleRetour(ActionEvent event) {
-        try {
-            Outils.load(event, "Tableau de bord", "/fxml/admin/dashboard.fxml");
-        } catch (IOException e) {
-            Notification.notifError("Erreur", "Erreur lors du chargement du tableau de bord : " + e.getMessage());
+            @FXML
+            private void handleTransaction(ActionEvent event) {
+                try {
+                    Outils.load(event, "Transactions", "/fxml/admin/transaction.fxml");
+                } catch (IOException e) {
+                    Notification.notifError("Erreur", "Erreur lors du chargement des transactions : " + e.getMessage());
+                }
+            }
+
+            @FXML
+            private void handleCreerCarte(ActionEvent event) {
+                try {
+                    Outils.load(event, "Gestion des cartes bancaires", "/fxml/admin/carte.fxml");
+                } catch (IOException e) {
+                    Notification.notifError("Erreur", "Erreur lors du chargement de la gestion des cartes : " + e.getMessage());
+                }
+            }
         }
-    }
-
-    @FXML
-    private void handleTransaction(ActionEvent event) {
-        try {
-            Outils.load(event, "Transactions", "/fxml/admin/transaction.fxml");
-        } catch (IOException e) {
-            Notification.notifError("Erreur", "Erreur lors du chargement des transactions : " + e.getMessage());
-        }
-    }
-
-    @FXML
-    private void handleCreerCarte(ActionEvent event) {
-        try {
-            Outils.load(event, "Gestion des cartes bancaires", "/fxml/admin/carte.fxml");
-        } catch (IOException e) {
-            Notification.notifError("Erreur", "Erreur lors du chargement de la gestion des cartes : " + e.getMessage());
-        }
-    }
-}

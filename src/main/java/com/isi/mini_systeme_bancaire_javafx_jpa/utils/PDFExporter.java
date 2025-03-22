@@ -15,15 +15,6 @@ import java.util.List;
 public class PDFExporter {
 
     private static final DateTimeFormatter dateFormatter = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
-
-    /**
-     * Exporte les transactions vers un fichier PDF avec des informations générales
-     * @param transactions Liste des transactions à exporter
-     * @param emetteur Nom de l'émetteur du rapport
-     * @param titre Titre du rapport
-     * @param filePath Chemin du fichier de destination
-     * @return true si l'export a réussi, false sinon
-     */
     public static boolean exporterTransactions(List<Transaction> transactions, String emetteur, String titre, String filePath) {
         try (PDDocument document = new PDDocument()) {
             PDPage page = new PDPage(PDRectangle.A4);

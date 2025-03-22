@@ -1,6 +1,5 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.repository;
 
-
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.Client;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.JpaUtil;
 import jakarta.persistence.EntityManager;
@@ -21,11 +20,37 @@ public class ClientRepository {
         }
     }
 
+    // Nouvelle méthode pour charger les clients avec leurs comptes
+    public List<Client> findAllWithComptes() {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Client> query = em.createQuery(
+                    "SELECT DISTINCT c FROM Client c LEFT JOIN FETCH c.comptes ORDER BY c.nom, c.prenom", Client.class);
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
     public Optional<Client> findById(Long id) {
         EntityManager em = JpaUtil.getEntityManager();
         try {
             Client client = em.find(Client.class, id);
             return Optional.ofNullable(client);
+        } finally {
+            em.close();
+        }
+    }
+
+    // Méthode pour charger un client avec ses comptes
+    public Optional<Client> findByIdWithComptes(Long id) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Client> query = em.createQuery(
+                    "SELECT c FROM Client c LEFT JOIN FETCH c.comptes WHERE c.id = :id", Client.class);
+            query.setParameter("id", id);
+            List<Client> clients = query.getResultList();
+            return clients.isEmpty() ? Optional.empty() : Optional.of(clients.get(0));
         } finally {
             em.close();
         }
@@ -49,6 +74,23 @@ public class ClientRepository {
         try {
             TypedQuery<Client> query = em.createQuery(
                     "SELECT c FROM Client c WHERE " +
+                            "LOWER(c.nom) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(c.prenom) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(c.email) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(c.telephone) LIKE LOWER(:searchTerm)", Client.class);
+            query.setParameter("searchTerm", "%" + searchTerm + "%");
+            return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    // Méthode de recherche avec chargement des comptes
+    public List<Client> searchClientsWithComptes(String searchTerm) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Client> query = em.createQuery(
+                    "SELECT DISTINCT c FROM Client c LEFT JOIN FETCH c.comptes WHERE " +
                             "LOWER(c.nom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.prenom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.email) LIKE LOWER(:searchTerm) OR " +

@@ -1,11 +1,7 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.controller.admin;
 
-import com.isi.mini_systeme_bancaire_javafx_jpa.model.Compte;
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.Transaction;
-import com.isi.mini_systeme_bancaire_javafx_jpa.repository.CompteRepository;
 import com.isi.mini_systeme_bancaire_javafx_jpa.repository.TransactionRepository;
-import com.isi.mini_systeme_bancaire_javafx_jpa.service.impl.CompteServiceImpl;
-import com.isi.mini_systeme_bancaire_javafx_jpa.service.interfaces.CompteService;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Notification;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Outils;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.SessionManager;
@@ -21,99 +17,38 @@ import java.io.IOException;
 import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import java.util.ResourceBundle;
+import java.util.stream.Collectors;
 
 public class TransactionController implements Initializable {
+    @FXML
+    private TableView<Transaction> tableTransactions;
 
     @FXML
-    private TabPane tabPane;
-
-    // Onglet dépôt
+    private TableColumn<Transaction, String> colType;
     @FXML
-    private ComboBox<Compte> cbCompteDepot;
-
+    private TableColumn<Transaction, String> colNumeroCompte;
     @FXML
-    private TextField txtMontantDepot;
-
+    private TableColumn<Transaction, String> colClient;
     @FXML
-    private TableView<Transaction> tableDepots;
-
+    private TableColumn<Transaction, Double> colMontant;
     @FXML
-    private TableColumn<Transaction, String> colNumeroDepot;
+    private TableColumn<Transaction, LocalDateTime> colDate;
+    @FXML
+    private TableColumn<Transaction, String> colStatut;
 
     @FXML
-    private TableColumn<Transaction, String> colClientDepot;
-
+    private ComboBox<String> cbFiltreType;
     @FXML
-    private TableColumn<Transaction, Double> colMontantDepot;
-
+    private ComboBox<String> cbFiltreStatut;
     @FXML
-    private TableColumn<Transaction, LocalDateTime> colDateDepot;
-
+    private DatePicker dpDateDebut;
     @FXML
-    private TableColumn<Transaction, String> colStatutDepot;
+    private DatePicker dpDateFin;
 
-    // Onglet retrait
-    @FXML
-    private ComboBox<Compte> cbCompteRetrait;
-
-    @FXML
-    private TextField txtMontantRetrait;
-
-    @FXML
-    private TableView<Transaction> tableRetraits;
-
-    @FXML
-    private TableColumn<Transaction, String> colNumeroRetrait;
-
-    @FXML
-    private TableColumn<Transaction, String> colClientRetrait;
-
-    @FXML
-    private TableColumn<Transaction, Double> colMontantRetrait;
-
-    @FXML
-    private TableColumn<Transaction, LocalDateTime> colDateRetrait;
-
-    @FXML
-    private TableColumn<Transaction, String> colStatutRetrait;
-
-    // Onglet virement
-    @FXML
-    private ComboBox<Compte> cbCompteSource;
-
-    @FXML
-    private ComboBox<Compte> cbCompteDestination;
-
-    @FXML
-    private TextField txtMontantVirement;
-
-    @FXML
-    private TableView<Transaction> tableVirements;
-
-    @FXML
-    private TableColumn<Transaction, String> colCompteSource;
-
-    @FXML
-    private TableColumn<Transaction, String> colCompteDestination;
-
-    @FXML
-    private TableColumn<Transaction, Double> colMontantVirement;
-
-    @FXML
-    private TableColumn<Transaction, LocalDateTime> colDateVirement;
-
-    @FXML
-    private TableColumn<Transaction, String> colStatutVirement;
-
-    private CompteService compteService = new CompteServiceImpl();
-    private CompteRepository compteRepository = new CompteRepository();
-    private TransactionRepository transactionRepository = new TransactionRepository();
-
-    private ObservableList<Compte> comptesList = FXCollections.observableArrayList();
-    private ObservableList<Transaction> depotsList = FXCollections.observableArrayList();
-    private ObservableList<Transaction> retraitsList = FXCollections.observableArrayList();
-    private ObservableList<Transaction> virementsList = FXCollections.observableArrayList();
+    private final TransactionRepository transactionRepository = new TransactionRepository();
+    private final ObservableList<Transaction> transactionsList = FXCollections.observableArrayList();
 
     @Override
     public void initialize(URL url, ResourceBundle resourceBundle) {
@@ -123,144 +58,66 @@ public class TransactionController implements Initializable {
             return;
         }
 
-        // Configurer les combobox des comptes
-        configureCompteComboBox(cbCompteDepot);
-        configureCompteComboBox(cbCompteRetrait);
-        configureCompteComboBox(cbCompteSource);
-        configureCompteComboBox(cbCompteDestination);
+        // Initialiser les filtres
+        initialiserFiltres();
 
-        // Configurer les colonnes du tableau des dépôts
-        configureColonnesTableauDepots();
-
-        // Configurer les colonnes du tableau des retraits
-        configureColonnesTableauRetraits();
-
-        // Configurer les colonnes du tableau des virements
-        configureColonnesTableauVirements();
-
-        // Charger les comptes
-        chargerComptes();
+        // Configurer les colonnes du tableau
+        configurerColonnesTableau();
 
         // Charger les transactions
         chargerTransactions();
+
+        // Configurer les écouteurs pour les filtres
+        configurerEcouteursFiltre();
     }
 
-    private void configureCompteComboBox(ComboBox<Compte> comboBox) {
-        comboBox.setConverter(new javafx.util.StringConverter<Compte>() {
-            @Override
-            public String toString(Compte compte) {
-                if (compte == null) return "";
-                String clientInfo = "N/A";
-                if (compte.getClient() != null) {
-                    clientInfo = compte.getClient().getNom() + " " + compte.getClient().getPrenom();
-                }
-                return compte.getNumero() + " - " + clientInfo + " - " + compte.getSolde() + " FCFA";
-            }
+    private void initialiserFiltres() {
+        // Types de transactions
+        cbFiltreType.setItems(FXCollections.observableArrayList(
+                "Tous", "DEPOT", "RETRAIT", "VIREMENT"
+        ));
+        cbFiltreType.setValue("Tous");
 
-            @Override
-            public Compte fromString(String s) {
-                return null; // Non utilisé
-            }
-        });
+        // Statuts des transactions
+        cbFiltreStatut.setItems(FXCollections.observableArrayList(
+                "Tous", "En attente", "Validé", "Rejeté"
+        ));
+        cbFiltreStatut.setValue("Tous");
     }
 
-    private void configureColonnesTableauDepots() {
-        colNumeroDepot.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getNumero()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-
-        colClientDepot.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null && cellData.getValue().getCompte().getClient() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getClient().getNom() + " " +
-                                cellData.getValue().getCompte().getClient().getPrenom()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-
-        colMontantDepot.setCellValueFactory(new PropertyValueFactory<>("montant"));
-        colDateDepot.setCellValueFactory(new PropertyValueFactory<>("date"));
-        colStatutDepot.setCellValueFactory(new PropertyValueFactory<>("statut"));
+    private void configurerEcouteursFiltre() {
+        cbFiltreType.setOnAction(event -> filtrerTransactions());
+        cbFiltreStatut.setOnAction(event -> filtrerTransactions());
+        dpDateDebut.setOnAction(event -> filtrerTransactions());
+        dpDateFin.setOnAction(event -> filtrerTransactions());
     }
 
-    private void configureColonnesTableauRetraits() {
-        colNumeroRetrait.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getNumero()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
+    private void configurerColonnesTableau() {
+        colType.setCellValueFactory(new PropertyValueFactory<>("type"));
+
+        colNumeroCompte.setCellValueFactory(cellData -> {
+            Transaction transaction = cellData.getValue();
+            String numero = transaction.getCompte() != null
+                    ? transaction.getCompte().getNumero()
+                    : (transaction.getCompteSource() != null
+                    ? transaction.getCompteSource().getNumero()
+                    : "N/A");
+            return javafx.beans.binding.Bindings.createStringBinding(() -> numero);
         });
 
-        colClientRetrait.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompte() != null && cellData.getValue().getCompte().getClient() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompte().getClient().getNom() + " " +
-                                cellData.getValue().getCompte().getClient().getPrenom()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
+        colClient.setCellValueFactory(cellData -> {
+            Transaction transaction = cellData.getValue();
+            String client = transaction.getCompte() != null && transaction.getCompte().getClient() != null
+                    ? transaction.getCompte().getClient().getNom() + " " + transaction.getCompte().getClient().getPrenom()
+                    : (transaction.getCompteSource() != null && transaction.getCompteSource().getClient() != null
+                    ? transaction.getCompteSource().getClient().getNom() + " " + transaction.getCompteSource().getClient().getPrenom()
+                    : "N/A");
+            return javafx.beans.binding.Bindings.createStringBinding(() -> client);
         });
 
-        colMontantRetrait.setCellValueFactory(new PropertyValueFactory<>("montant"));
-        colDateRetrait.setCellValueFactory(new PropertyValueFactory<>("date"));
-        colStatutRetrait.setCellValueFactory(new PropertyValueFactory<>("statut"));
-    }
-
-    private void configureColonnesTableauVirements() {
-        colCompteSource.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompteSource() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompteSource().getNumero()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-
-        colCompteDestination.setCellValueFactory(cellData -> {
-            if (cellData.getValue().getCompteDestination() != null) {
-                return javafx.beans.binding.Bindings.createStringBinding(
-                        () -> cellData.getValue().getCompteDestination().getNumero()
-                );
-            } else {
-                return javafx.beans.binding.Bindings.createStringBinding(() -> "N/A");
-            }
-        });
-
-        colMontantVirement.setCellValueFactory(new PropertyValueFactory<>("montant"));
-        colDateVirement.setCellValueFactory(new PropertyValueFactory<>("date"));
-        colStatutVirement.setCellValueFactory(new PropertyValueFactory<>("statut"));
-    }
-
-    private void chargerComptes() {
-        try {
-            // Récupérer tous les comptes
-            List<Compte> comptes = compteRepository.findAll();
-
-            // Mettre à jour la liste observable
-            comptesList.clear();
-            comptesList.addAll(comptes);
-
-            // Mettre à jour les combobox
-            cbCompteDepot.setItems(comptesList);
-            cbCompteRetrait.setItems(comptesList);
-            cbCompteSource.setItems(comptesList);
-            cbCompteDestination.setItems(comptesList);
-        } catch (Exception e) {
-            Notification.notifError("Erreur", "Erreur lors du chargement des comptes : " + e.getMessage());
-        }
+        colMontant.setCellValueFactory(new PropertyValueFactory<>("montant"));
+        colDate.setCellValueFactory(new PropertyValueFactory<>("date"));
+        colStatut.setCellValueFactory(new PropertyValueFactory<>("statut"));
     }
 
     private void chargerTransactions() {
@@ -268,211 +125,148 @@ public class TransactionController implements Initializable {
             // Récupérer toutes les transactions
             List<Transaction> transactions = transactionRepository.findAll();
 
-            // Filtrer les dépôts
-            List<Transaction> depots = transactions.stream()
-                    .filter(t -> "DEPOT".equals(t.getType()))
-                    .toList();
+            // Mettre à jour la liste
+            transactionsList.clear();
+            transactionsList.addAll(transactions);
 
-            // Filtrer les retraits
-            List<Transaction> retraits = transactions.stream()
-                    .filter(t -> "RETRAIT".equals(t.getType()))
-                    .toList();
+            // Mettre à jour le tableau
+            tableTransactions.setItems(transactionsList);
 
-            // Filtrer les virements
-            List<Transaction> virements = transactions.stream()
-                    .filter(t -> "VIREMENT".equals(t.getType()))
-                    .toList();
-
-            // Mettre à jour les listes observables
-            depotsList.clear();
-            depotsList.addAll(depots);
-
-            retraitsList.clear();
-            retraitsList.addAll(retraits);
-
-            virementsList.clear();
-            virementsList.addAll(virements);
-
-            // Mettre à jour les tableaux
-            tableDepots.setItems(depotsList);
-            tableRetraits.setItems(retraitsList);
-            tableVirements.setItems(virementsList);
         } catch (Exception e) {
             Notification.notifError("Erreur", "Erreur lors du chargement des transactions : " + e.getMessage());
         }
     }
 
-    @FXML
-    private void handleDepot(ActionEvent event) {
+    private void filtrerTransactions() {
         try {
-            // Vérifier qu'un compte est sélectionné
-            if (cbCompteDepot.getValue() == null) {
-                Notification.notifWarning("Dépôt", "Veuillez sélectionner un compte");
-                return;
+            // Récupérer toutes les transactions
+            List<Transaction> transactions = transactionRepository.findAll();
+
+            // Filtrer par type
+            String typeSelectionne = cbFiltreType.getValue();
+            if (!"Tous".equals(typeSelectionne)) {
+                transactions = transactions.stream()
+                        .filter(t -> t.getType().equals(typeSelectionne))
+                        .collect(Collectors.toList());
             }
 
-            // Vérifier que le montant est saisi
-            if (txtMontantDepot.getText().isEmpty()) {
-                Notification.notifWarning("Dépôt", "Veuillez saisir un montant");
-                return;
+            // Filtrer par statut
+            String statutSelectionne = cbFiltreStatut.getValue();
+            if (!"Tous".equals(statutSelectionne)) {
+                transactions = transactions.stream()
+                        .filter(t -> t.getStatut().equals(statutSelectionne))
+                        .collect(Collectors.toList());
             }
 
-            // Récupérer les valeurs
-            Compte compte = cbCompteDepot.getValue();
-            double montant;
+            // Filtrer par plage de dates
+            LocalDateTime dateDebut = dpDateDebut.getValue() != null
+                    ? dpDateDebut.getValue().atStartOfDay()
+                    : null;
+            LocalDateTime dateFin = dpDateFin.getValue() != null
+                    ? dpDateFin.getValue().atTime(23, 59, 59)
+                    : null;
 
-            try {
-                montant = Double.parseDouble(txtMontantDepot.getText());
-            } catch (NumberFormatException e) {
-                Notification.notifWarning("Dépôt", "Veuillez saisir un montant valide");
-                return;
+            if (dateDebut != null && dateFin != null) {
+                transactions = transactions.stream()
+                        .filter(t -> !t.getDate().isBefore(dateDebut) && !t.getDate().isAfter(dateFin))
+                        .collect(Collectors.toList());
             }
 
-            // Vérifier que le montant est positif
-            if (montant <= 0) {
-                Notification.notifWarning("Dépôt", "Le montant doit être supérieur à zéro");
-                return;
-            }
+            // Mettre à jour la liste
+            transactionsList.clear();
+            transactionsList.addAll(transactions);
 
-            // Effectuer le dépôt
-            boolean success = compteService.effectuerDepot(compte.getId(), montant);
+            // Mettre à jour le tableau
+            tableTransactions.setItems(transactionsList);
 
-            if (success) {
-                Notification.notifSuccess("Dépôt", "Dépôt effectué avec succès");
-
-                // Réinitialiser les champs
-                txtMontantDepot.clear();
-
-                // Recharger les comptes et les transactions
-                chargerComptes();
-                chargerTransactions();
-            }
         } catch (Exception e) {
-            Notification.notifError("Erreur", "Erreur lors du dépôt : " + e.getMessage());
+            Notification.notifError("Erreur", "Erreur lors du filtrage des transactions : " + e.getMessage());
         }
     }
 
     @FXML
-    private void handleRetrait(ActionEvent event) {
-        try {
-            // Vérifier qu'un compte est sélectionné
-            if (cbCompteRetrait.getValue() == null) {
-                Notification.notifWarning("Retrait", "Veuillez sélectionner un compte");
-                return;
-            }
+    private void handleValiderTransaction() {
+        Transaction selectedTransaction = tableTransactions.getSelectionModel().getSelectedItem();
 
-            // Vérifier que le montant est saisi
-            if (txtMontantRetrait.getText().isEmpty()) {
-                Notification.notifWarning("Retrait", "Veuillez saisir un montant");
-                return;
-            }
+        if (selectedTransaction == null) {
+            Notification.notifWarning("Validation", "Veuillez sélectionner une transaction à valider");
+            return;
+        }
 
-            // Récupérer les valeurs
-            Compte compte = cbCompteRetrait.getValue();
-            double montant;
+        // Vérifier si la transaction est déjà validée ou rejetée
+        if ("Validé".equals(selectedTransaction.getStatut()) ||
+                "Rejeté".equals(selectedTransaction.getStatut())) {
+            Notification.notifWarning("Validation", "Cette transaction a déjà été traitée");
+            return;
+        }
 
+        // Boîte de confirmation
+        Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmDialog.setTitle("Confirmation de validation");
+        confirmDialog.setHeaderText("Voulez-vous vraiment valider cette transaction ?");
+        confirmDialog.setContentText("Type : " + selectedTransaction.getType() +
+                "\nMontant : " + selectedTransaction.getMontant() +
+                "\nDate : " + selectedTransaction.getDate());
+
+        Optional<ButtonType> result = confirmDialog.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
             try {
-                montant = Double.parseDouble(txtMontantRetrait.getText());
-            } catch (NumberFormatException e) {
-                Notification.notifWarning("Retrait", "Veuillez saisir un montant valide");
-                return;
-            }
+                // Mettre à jour le statut
+                selectedTransaction.setStatut("Validé");
 
-            // Vérifier que le montant est positif
-            if (montant <= 0) {
-                Notification.notifWarning("Retrait", "Le montant doit être supérieur à zéro");
-                return;
-            }
+                // Enregistrer la mise à jour
+                transactionRepository.save(selectedTransaction);
 
-            // Vérifier que le solde est suffisant
-            if (compte.getSolde() < montant) {
-                Notification.notifWarning("Retrait", "Solde insuffisant");
-                return;
-            }
-
-            // Effectuer le retrait
-            boolean success = compteService.effectuerRetrait(compte.getId(), montant);
-
-            if (success) {
-                Notification.notifSuccess("Retrait", "Retrait effectué avec succès");
-
-                // Réinitialiser les champs
-                txtMontantRetrait.clear();
-
-                // Recharger les comptes et les transactions
-                chargerComptes();
+                // Rafraîchir la liste
                 chargerTransactions();
+
+                Notification.notifSuccess("Validation", "Transaction validée avec succès");
+            } catch (Exception e) {
+                Notification.notifError("Erreur", "Erreur lors de la validation : " + e.getMessage());
             }
-        } catch (Exception e) {
-            Notification.notifError("Erreur", "Erreur lors du retrait : " + e.getMessage());
         }
     }
 
     @FXML
-    private void handleVirement(ActionEvent event) {
-        try {
-            // Vérifier que les comptes sont sélectionnés
-            if (cbCompteSource.getValue() == null) {
-                Notification.notifWarning("Virement", "Veuillez sélectionner un compte source");
-                return;
-            }
+    private void handleRejeterTransaction() {
+        Transaction selectedTransaction = tableTransactions.getSelectionModel().getSelectedItem();
 
-            if (cbCompteDestination.getValue() == null) {
-                Notification.notifWarning("Virement", "Veuillez sélectionner un compte destination");
-                return;
-            }
+        if (selectedTransaction == null) {
+            Notification.notifWarning("Rejet", "Veuillez sélectionner une transaction à rejeter");
+            return;
+        }
 
-            // Vérifier que les comptes sont différents
-            if (cbCompteSource.getValue().getId().equals(cbCompteDestination.getValue().getId())) {
-                Notification.notifWarning("Virement", "Les comptes source et destination doivent être différents");
-                return;
-            }
+        // Vérifier si la transaction est déjà validée ou rejetée
+        if ("Validé".equals(selectedTransaction.getStatut()) ||
+                "Rejeté".equals(selectedTransaction.getStatut())) {
+            Notification.notifWarning("Rejet", "Cette transaction a déjà été traitée");
+            return;
+        }
 
-            // Vérifier que le montant est saisi
-            if (txtMontantVirement.getText().isEmpty()) {
-                Notification.notifWarning("Virement", "Veuillez saisir un montant");
-                return;
-            }
+        // Boîte de confirmation
+        Alert confirmDialog = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmDialog.setTitle("Confirmation de rejet");
+        confirmDialog.setHeaderText("Voulez-vous vraiment rejeter cette transaction ?");
+        confirmDialog.setContentText("Type : " + selectedTransaction.getType() +
+                "\nMontant : " + selectedTransaction.getMontant() +
+                "\nDate : " + selectedTransaction.getDate());
 
-            // Récupérer les valeurs
-            Compte compteSource = cbCompteSource.getValue();
-            Compte compteDestination = cbCompteDestination.getValue();
-            double montant;
-
+        Optional<ButtonType> result = confirmDialog.showAndWait();
+        if (result.isPresent() && result.get() == ButtonType.OK) {
             try {
-                montant = Double.parseDouble(txtMontantVirement.getText());
-            } catch (NumberFormatException e) {
-                Notification.notifWarning("Virement", "Veuillez saisir un montant valide");
-                return;
-            }
+                // Mettre à jour le statut
+                selectedTransaction.setStatut("Rejeté");
 
-            // Vérifier que le montant est positif
-            if (montant <= 0) {
-                Notification.notifWarning("Virement", "Le montant doit être supérieur à zéro");
-                return;
-            }
+                // Enregistrer la mise à jour
+                transactionRepository.save(selectedTransaction);
 
-            // Vérifier que le solde est suffisant
-            if (compteSource.getSolde() < montant) {
-                Notification.notifWarning("Virement", "Solde insuffisant");
-                return;
-            }
-
-            // Effectuer le virement
-            boolean success = compteService.effectuerVirement(compteSource.getId(), compteDestination.getId(), montant);
-
-            if (success) {
-                Notification.notifSuccess("Virement", "Virement effectué avec succès");
-
-                // Réinitialiser les champs
-                txtMontantVirement.clear();
-
-                // Recharger les comptes et les transactions
-                chargerComptes();
+                // Rafraîchir la liste
                 chargerTransactions();
+
+                Notification.notifSuccess("Rejet", "Transaction rejetée avec succès");
+            } catch (Exception e) {
+                Notification.notifError("Erreur", "Erreur lors du rejet : " + e.getMessage());
             }
-        } catch (Exception e) {
-            Notification.notifError("Erreur", "Erreur lors du virement : " + e.getMessage());
         }
     }
 
@@ -482,15 +276,6 @@ public class TransactionController implements Initializable {
             Outils.load(event, "Tableau de bord", "/fxml/admin/dashboard.fxml");
         } catch (IOException e) {
             Notification.notifError("Erreur", "Erreur lors du chargement du tableau de bord : " + e.getMessage());
-        }
-    }
-
-    @FXML
-    private void handleGestionComptes(ActionEvent event) {
-        try {
-            Outils.load(event, "Gestion des comptes", "/fxml/admin/compte.fxml");
-        } catch (IOException e) {
-            Notification.notifError("Erreur", "Erreur lors du chargement de la gestion des comptes : " + e.getMessage());
         }
     }
 }
