@@ -10,6 +10,7 @@ import com.isi.mini_systeme_bancaire_javafx_jpa.request.CompteRequest;
 import com.isi.mini_systeme_bancaire_javafx_jpa.response.CompteResponse;
 import com.isi.mini_systeme_bancaire_javafx_jpa.service.interfaces.ClientService;
 import com.isi.mini_systeme_bancaire_javafx_jpa.service.interfaces.CompteService;
+import com.isi.mini_systeme_bancaire_javafx_jpa.service.interfaces.FraisBancaireService;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Email;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Notification;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.Outils;
@@ -25,11 +26,13 @@ public class CompteServiceImpl implements CompteService {
     private final CompteRepository compteRepository;
     private final TransactionRepository transactionRepository;
     private final ClientService clientService;
+    private final FraisBancaireService fraisBancaireService;
 
     public CompteServiceImpl() {
         this.compteRepository = new CompteRepository();
         this.transactionRepository = new TransactionRepository();
         this.clientService = new ClientServiceImpl();
+        this.fraisBancaireService = new FraisBancaireServiceImpl();
     }
 
     @Override
@@ -85,30 +88,50 @@ public class CompteServiceImpl implements CompteService {
             return null;
         }
 
-        // Créer un nouveau compte
-        Compte compte = CompteMapper.fromRequest(
-                new CompteRequest(
-                        numero,
-                        compteRequest.type(),
-                        compteRequest.solde(),
-                        compteRequest.dateCreation(),
-                        compteRequest.statut() != null ? compteRequest.statut() : "actif",
-                        compteRequest.clientId()
-                ),
-                client
-        );
+        // Déterminer le type de compte et définir le solde initial en conséquence
+        String type = compteRequest.type();
+        double solde;
 
-        // Définir la date de création si non fournie
-        if (compte.getDateCreation() == null) {
-            compte.setDateCreation(LocalDate.now());
+        if ("EPARGNE".equalsIgnoreCase(type) || "épargne".equalsIgnoreCase(type)) {
+            solde = 5000.0; // Solde par défaut pour compte épargne
+            type = "EPARGNE"; // Normaliser le type
+        } else {
+            solde = 10000.0; // Solde par défaut pour compte courant
+            type = "COURANT"; // Normaliser le type
         }
+
+        // Créer un nouveau compte
+        Compte compte = new Compte();
+        compte.setNumero(numero);
+        compte.setType(type);
+        compte.setSolde(solde);
+        compte.setDateCreation(compteRequest.dateCreation() != null ? compteRequest.dateCreation() : LocalDate.now());
+        compte.setStatut(compteRequest.statut() != null ? compteRequest.statut() : "actif");
+        compte.setClient(client);
 
         // Sauvegarder le compte
         compte = compteRepository.save(compte);
 
+        // Créer une transaction de dépôt initial
+        Transaction transaction = new Transaction();
+        transaction.setType("DEPOT");
+        transaction.setMontant(solde);
+        transaction.setDate(LocalDateTime.now());
+        transaction.setStatut("COMPLETEE");
+        transaction.setCompte(compte);
+        transactionRepository.save(transaction);
+
         // Envoyer un email de confirmation
         try {
-            Email.sendWelcomeEmail(client.getEmail(), client.getNom() + " " + client.getPrenom(), compte.getNumero());
+            String message = "Bonjour " + client.getNom() + " " + client.getPrenom() + ",\n\n" +
+                    "Nous vous informons qu'un nouveau compte a été créé pour vous:\n" +
+                    "Numéro de compte: " + compte.getNumero() + "\n" +
+                    "Type de compte: " + compte.getType() + "\n" +
+                    "Solde initial: " + compte.getSolde() + " FCFA\n\n" +
+                    "Cordialement,\n" +
+                    "L'équipe du Mini Système Bancaire";
+
+            Email.sendCustomEmail(client.getEmail(), "Création de compte - Mini Système Bancaire", message);
         } catch (Exception e) {
             Notification.notifWarning("Email", "Impossible d'envoyer l'email de confirmation: " + e.getMessage());
         }
@@ -121,7 +144,13 @@ public class CompteServiceImpl implements CompteService {
         return compteRepository.findById(id)
                 .map(compte -> {
                     // Mettre à jour les champs du compte
-                    CompteMapper.updateFromRequest(compte, compteRequest);
+                    if (compteRequest.type() != null) {
+                        compte.setType(compteRequest.type());
+                    }
+
+                    if (compteRequest.statut() != null) {
+                        compte.setStatut(compteRequest.statut());
+                    }
 
                     // Sauvegarder les modifications
                     Compte updatedCompte = compteRepository.save(compte);
@@ -171,6 +200,11 @@ public class CompteServiceImpl implements CompteService {
             transaction.setCompte(compte);
             transactionRepository.save(transaction);
 
+            // Appliquer des frais bancaires pour le dépôt
+            if (montant >= 100000) { // Exemple: frais pour les gros dépôts
+                fraisBancaireService.appliquerFraisTransaction(compteId, "DEPOT", montant);
+            }
+
             // Envoyer un email de notification
             Client client = compte.getClient();
             if (client != null) {
@@ -213,11 +247,21 @@ public class CompteServiceImpl implements CompteService {
         }
 
         try {
+            // Calculer les frais de retrait
+            double fraisRetrait = calculerFraisRetrait(montant, compte.getType());
+            double montantTotal = montant + fraisRetrait;
+
+            if (compte.getSolde() < montantTotal) {
+                Notification.notifError("Erreur de retrait",
+                        "Solde insuffisant pour couvrir le montant et les frais de " + fraisRetrait + " FCFA");
+                return false;
+            }
+
             // Diminuer le solde du compte
-            compte.setSolde(compte.getSolde() - montant);
+            compte.setSolde(compte.getSolde() - montantTotal);
             compteRepository.save(compte);
 
-            // Créer une transaction
+            // Créer une transaction pour le retrait
             Transaction transaction = new Transaction(
                     "RETRAIT",
                     montant,
@@ -227,20 +271,27 @@ public class CompteServiceImpl implements CompteService {
             transaction.setCompte(compte);
             transactionRepository.save(transaction);
 
+            // Appliquer les frais bancaires
+            if (fraisRetrait > 0) {
+                fraisBancaireService.appliquerFraisTransaction(compteId, "RETRAIT", montant);
+            }
+
             // Envoyer un email de notification
             Client client = compte.getClient();
             if (client != null) {
-                Email.sendNotificationTransaction(
-                        client.getEmail(),
-                        client.getNom() + " " + client.getPrenom(),
-                        "retrait",
-                        montant,
-                        compte.getNumero()
-                );
+                String message = "Bonjour " + client.getNom() + " " + client.getPrenom() + ",\n\n" +
+                        "Un retrait de " + montant + " FCFA a été effectué sur votre compte N° " + compte.getNumero() + ".\n" +
+                        "Frais de retrait: " + fraisRetrait + " FCFA\n" +
+                        "Montant total débité: " + montantTotal + " FCFA\n" +
+                        "Nouveau solde: " + compte.getSolde() + " FCFA\n\n" +
+                        "Cordialement,\n" +
+                        "L'équipe du Mini Système Bancaire";
+
+                Email.sendCustomEmail(client.getEmail(), "Notification de retrait - Mini Système Bancaire", message);
             }
 
             Notification.notifSuccess("Retrait réussi",
-                    "Retrait de " + montant + " FCFA effectué sur le compte " + compte.getNumero());
+                    "Retrait de " + montant + " FCFA (+ frais: " + fraisRetrait + " FCFA) effectué sur le compte " + compte.getNumero());
             return true;
         } catch (Exception e) {
             Notification.notifError("Erreur de retrait", e.getMessage());
@@ -275,14 +326,19 @@ public class CompteServiceImpl implements CompteService {
         Compte compteSource = compteSourceOpt.get();
         Compte compteDest = compteDestOpt.get();
 
-        if (compteSource.getSolde() < montant) {
-            Notification.notifError("Erreur de virement", "Solde insuffisant");
+        // Calculer les frais de virement
+        double fraisVirement = calculerFraisVirement(montant, compteSource.getType(), compteDest.getType());
+        double montantTotal = montant + fraisVirement;
+
+        if (compteSource.getSolde() < montantTotal) {
+            Notification.notifError("Erreur de virement",
+                    "Solde insuffisant pour couvrir le montant et les frais de " + fraisVirement + " FCFA");
             return false;
         }
 
         try {
             // Diminuer le solde du compte source
-            compteSource.setSolde(compteSource.getSolde() - montant);
+            compteSource.setSolde(compteSource.getSolde() - montantTotal);
             compteRepository.save(compteSource);
 
             // Augmenter le solde du compte destination
@@ -300,31 +356,38 @@ public class CompteServiceImpl implements CompteService {
             transaction.setCompteDestination(compteDest);
             transactionRepository.save(transaction);
 
+            // Appliquer les frais bancaires
+            if (fraisVirement > 0) {
+                fraisBancaireService.appliquerFraisTransaction(compteSourceId, "VIREMENT", montant);
+            }
+
             // Envoyer des emails de notification
             Client clientSource = compteSource.getClient();
             if (clientSource != null) {
-                Email.sendNotificationTransaction(
-                        clientSource.getEmail(),
-                        clientSource.getNom() + " " + clientSource.getPrenom(),
-                        "virement sortant",
-                        montant,
-                        compteSource.getNumero()
-                );
+                String message = "Bonjour " + clientSource.getNom() + " " + clientSource.getPrenom() + ",\n\n" +
+                        "Un virement de " + montant + " FCFA a été effectué depuis votre compte N° " + compteSource.getNumero() + ".\n" +
+                        "Frais de virement: " + fraisVirement + " FCFA\n" +
+                        "Montant total débité: " + montantTotal + " FCFA\n" +
+                        "Nouveau solde: " + compteSource.getSolde() + " FCFA\n\n" +
+                        "Cordialement,\n" +
+                        "L'équipe du Mini Système Bancaire";
+
+                Email.sendCustomEmail(clientSource.getEmail(), "Notification de virement sortant - Mini Système Bancaire", message);
             }
 
             Client clientDest = compteDest.getClient();
             if (clientDest != null) {
-                Email.sendNotificationTransaction(
-                        clientDest.getEmail(),
-                        clientDest.getNom() + " " + clientDest.getPrenom(),
-                        "virement entrant",
-                        montant,
-                        compteDest.getNumero()
-                );
+                String message = "Bonjour " + clientDest.getNom() + " " + clientDest.getPrenom() + ",\n\n" +
+                        "Un virement de " + montant + " FCFA a été reçu sur votre compte N° " + compteDest.getNumero() + ".\n" +
+                        "Nouveau solde: " + compteDest.getSolde() + " FCFA\n\n" +
+                        "Cordialement,\n" +
+                        "L'équipe du Mini Système Bancaire";
+
+                Email.sendCustomEmail(clientDest.getEmail(), "Notification de virement entrant - Mini Système Bancaire", message);
             }
 
             Notification.notifSuccess("Virement réussi",
-                    "Virement de " + montant + " FCFA effectué du compte " +
+                    "Virement de " + montant + " FCFA (+ frais: " + fraisVirement + " FCFA) effectué du compte " +
                             compteSource.getNumero() + " vers le compte " + compteDest.getNumero());
             return true;
         } catch (Exception e) {
@@ -337,6 +400,24 @@ public class CompteServiceImpl implements CompteService {
     public Optional<Compte> getCompteEntityById(Long id) {
         return compteRepository.findById(id);
     }
+
+    // Méthode pour calculer les frais de retrait
+    private double calculerFraisRetrait(double montant, String typeCompte) {
+        if ("EPARGNE".equalsIgnoreCase(typeCompte)) {
+            return montant * 0.01; // 1% pour comptes épargne
+        } else {
+            return montant * 0.005; // 0.5% pour comptes courants
+        }
+    }
+
+    // Méthode pour calculer les frais de virement
+    private double calculerFraisVirement(double montant, String typeCompteSource, String typeCompteDest) {
+        boolean isInterne = typeCompteSource.equalsIgnoreCase(typeCompteDest);
+
+        if (isInterne) {
+            return montant * 0.002; // 0.2% pour virements internes
+        } else {
+            return montant * 0.01; // 1% pour virements externes
+        }
+    }
 }
-
-

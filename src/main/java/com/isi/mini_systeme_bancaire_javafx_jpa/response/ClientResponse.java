@@ -11,5 +11,6 @@ public record ClientResponse(
         String adresse,
         LocalDate dateInscription,
         String statut,
-        int nombreComptes
+        int nombreComptes,
+        boolean premierConnexion
 ) {}

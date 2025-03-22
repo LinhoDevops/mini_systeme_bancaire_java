@@ -1,6 +1,5 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.model;
 
-
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -28,13 +27,18 @@ public class Client {
     private String telephone;
     private String adresse;
     private LocalDate dateInscription;
-    private String statut;
+    private String statut; // actif/inactif
+    private String password; // Mot de passe pour connexion
+    private boolean premierConnexion = true; // Pour forcer le changement de mot de passe
 
     @OneToMany(mappedBy = "client", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<Compte> comptes = new ArrayList<>();
 
     @OneToMany(mappedBy = "client", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
     private List<TicketSupport> tickets = new ArrayList<>();
+
+    @OneToMany(mappedBy = "client", cascade = CascadeType.ALL, fetch = FetchType.LAZY)
+    private List<Credit> credits = new ArrayList<>();
 
     // Constructeur avec champs principaux
     public Client(String nom, String prenom, String email, String telephone, String adresse, LocalDate dateInscription, String statut) {
@@ -45,6 +49,8 @@ public class Client {
         this.adresse = adresse;
         this.dateInscription = dateInscription;
         this.statut = statut;
+        this.password = "P@sser123"; // Mot de passe par défaut
+        this.premierConnexion = true;
     }
 
     // Méthodes utilitaires
@@ -66,5 +72,19 @@ public class Client {
     public void removeTicket(TicketSupport ticket) {
         tickets.remove(ticket);
         ticket.setClient(null);
+    }
+
+    public void addCredit(Credit credit) {
+        credits.add(credit);
+        credit.setClient(this);
+    }
+
+    public void removeCredit(Credit credit) {
+        credits.remove(credit);
+        credit.setClient(null);
+    }
+
+    public String getNomComplet() {
+        return this.nom + " " + this.prenom;
     }
 }

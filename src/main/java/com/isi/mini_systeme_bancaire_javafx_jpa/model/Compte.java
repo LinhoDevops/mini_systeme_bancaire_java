@@ -1,6 +1,6 @@
 package com.isi.mini_systeme_bancaire_javafx_jpa.model;
 
-
+import com.isi.mini_systeme_bancaire_javafx_jpa.enums.TypeCompte;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
@@ -23,10 +23,14 @@ public class Compte {
     private Long id;
 
     private String numero;
-    private String type;  // courant/épargne
+
+    @Enumerated(EnumType.STRING)
+    private TypeCompte type;  // COURANT/EPARGNE
+
     private double solde;
     private LocalDate dateCreation;
-    private String statut;  // validé/rejeté
+    private String statut;  // actif/inactif/suspendu
+    private double tauxInteret; // Pour les comptes épargne
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "client_id")
@@ -42,10 +46,18 @@ public class Compte {
     private CarteBancaire carte;
 
     // Constructeur avec champs principaux
-    public Compte(String numero, String type, double solde, LocalDate dateCreation, String statut) {
+    public Compte(String numero, TypeCompte type, double solde, LocalDate dateCreation, String statut) {
         this.numero = numero;
         this.type = type;
-        this.solde = solde;
+        if (type == TypeCompte.COURANT) {
+            this.solde = 10000; // Solde initial pour compte courant
+            this.tauxInteret = 0;
+        } else if (type == TypeCompte.EPARGNE) {
+            this.solde = 5000; // Solde initial pour compte épargne
+            this.tauxInteret = 3.5; // Taux d'intérêt par défaut pour compte épargne (%)
+        } else {
+            this.solde = solde;
+        }
         this.dateCreation = dateCreation;
         this.statut = statut;
     }
@@ -69,5 +81,31 @@ public class Compte {
     public void removeFrais(FraisBancaire frais) {
         this.frais.remove(frais);
         frais.setCompte(null);
+    }
+
+    // Méthode pour appliquer des frais bancaires
+    public void appliquerFrais(String type, double montant) {
+        if (this.solde >= montant) {
+            this.solde -= montant;
+            FraisBancaire frais = new FraisBancaire(type, montant, LocalDate.now());
+            this.addFrais(frais);
+        }
+    }
+
+    // Méthode pour appliquer le taux d'intérêt (pour compte épargne)
+    public void appliquerInteret() {
+        if (this.type == TypeCompte.EPARGNE) {
+            double interets = this.solde * (this.tauxInteret / 100);
+            this.solde += interets;
+
+            // Créer une transaction pour tracer cette opération
+            Transaction transaction = new Transaction(
+                    "CREDIT_INTERET",
+                    interets,
+                    LocalDate.now().atStartOfDay(),
+                    "COMPLETEE"
+            );
+            this.addTransaction(transaction);
+        }
     }
 }

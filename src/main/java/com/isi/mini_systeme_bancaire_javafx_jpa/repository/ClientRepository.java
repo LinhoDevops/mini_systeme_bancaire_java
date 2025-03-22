@@ -3,6 +3,7 @@ package com.isi.mini_systeme_bancaire_javafx_jpa.repository;
 import com.isi.mini_systeme_bancaire_javafx_jpa.model.Client;
 import com.isi.mini_systeme_bancaire_javafx_jpa.utils.JpaUtil;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
 import jakarta.persistence.TypedQuery;
 
 import java.util.List;
@@ -20,7 +21,7 @@ public class ClientRepository {
         }
     }
 
-    // Nouvelle méthode pour charger les clients avec leurs comptes
+    // Méthode pour charger les clients avec leurs comptes
     public List<Client> findAllWithComptes() {
         EntityManager em = JpaUtil.getEntityManager();
         try {
@@ -62,8 +63,29 @@ public class ClientRepository {
             TypedQuery<Client> query = em.createQuery(
                     "SELECT c FROM Client c WHERE c.email = :email", Client.class);
             query.setParameter("email", email);
-            List<Client> clients = query.getResultList();
-            return clients.isEmpty() ? Optional.empty() : Optional.of(clients.get(0));
+            try {
+                Client client = query.getSingleResult();
+                return Optional.of(client);
+            } catch (NoResultException e) {
+                return Optional.empty();
+            }
+        } finally {
+            em.close();
+        }
+    }
+
+    public Optional<Client> findByTelephone(String telephone) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Client> query = em.createQuery(
+                    "SELECT c FROM Client c WHERE c.telephone = :telephone", Client.class);
+            query.setParameter("telephone", telephone);
+            try {
+                Client client = query.getSingleResult();
+                return Optional.of(client);
+            } catch (NoResultException e) {
+                return Optional.empty();
+            }
         } finally {
             em.close();
         }
@@ -77,7 +99,8 @@ public class ClientRepository {
                             "LOWER(c.nom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.prenom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.email) LIKE LOWER(:searchTerm) OR " +
-                            "LOWER(c.telephone) LIKE LOWER(:searchTerm)", Client.class);
+                            "LOWER(c.telephone) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(CONCAT(c.nom, ' ', c.prenom)) LIKE LOWER(:searchTerm)", Client.class);
             query.setParameter("searchTerm", "%" + searchTerm + "%");
             return query.getResultList();
         } finally {
@@ -94,9 +117,33 @@ public class ClientRepository {
                             "LOWER(c.nom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.prenom) LIKE LOWER(:searchTerm) OR " +
                             "LOWER(c.email) LIKE LOWER(:searchTerm) OR " +
-                            "LOWER(c.telephone) LIKE LOWER(:searchTerm)", Client.class);
+                            "LOWER(c.telephone) LIKE LOWER(:searchTerm) OR " +
+                            "LOWER(CONCAT(c.nom, ' ', c.prenom)) LIKE LOWER(:searchTerm)", Client.class);
             query.setParameter("searchTerm", "%" + searchTerm + "%");
             return query.getResultList();
+        } finally {
+            em.close();
+        }
+    }
+
+    // Compter le nombre total de clients
+    public long countAll() {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            return em.createQuery("SELECT COUNT(c) FROM Client c", Long.class).getSingleResult();
+        } finally {
+            em.close();
+        }
+    }
+
+    // Compter le nombre de clients par statut
+    public long countByStatut(String statut) {
+        EntityManager em = JpaUtil.getEntityManager();
+        try {
+            TypedQuery<Long> query = em.createQuery(
+                    "SELECT COUNT(c) FROM Client c WHERE c.statut = :statut", Long.class);
+            query.setParameter("statut", statut);
+            return query.getSingleResult();
         } finally {
             em.close();
         }
